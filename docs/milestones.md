@@ -16,10 +16,14 @@ Milestones are capability gates, not calendar deadlines. Advance only when evide
 ### M1 — Domain Model and Durable Jobs
 - [x] Define Job states and valid state machine transitions.
 - [x] Write state transition unit tests (`internal/job/state_test.go`).
-- [ ] Define `Job` and `Run` domain types (`internal/domain/` or `internal/job/`).
-- [ ] Implement error categories (transient vs permanent).
-- [ ] Choose PostgreSQL access / migrations strategy.
-- [ ] Persist and retrieve a job from PostgreSQL.
+- [x] Define `Job` domain entity and `TransitionTo` method (`internal/job/job.go`).
+- [x] Implement error categories (transient vs permanent) (`internal/job/errors.go`).
+- [x] Define storage contract `Repository` interface (`internal/job/repository.go`).
+- [x] Implement in-memory repository structure (`internal/job/memory_repository.go`).
+- [ ] Add `sync.RWMutex` thread safety to in-memory repository.
+- [ ] Write unit tests for `MemoryRepository` (`internal/job/memory_repository_test.go`).
+- [ ] Define `Run` domain model.
+- [ ] Implement PostgreSQL access and migrations.
 - **Acceptance Gate:** Accepted jobs persist across restart; invalid state transitions are rejected; tests cover the lifecycle.
 
 ---

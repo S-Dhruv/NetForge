@@ -19,6 +19,9 @@ Append-only, dated record of completed tasks, tests actually run with verified o
   - Initialized Go module `netforge` in project root (`go.mod`).
   - Learner designed and implemented core lifecycle states and transition logic in `internal/job/state.go` (`Waiting`, `Running`, `Stalled`, `Completed`, `Failed`).
   - Learner implemented idiomatic table-driven unit test suite in `internal/job/state_test.go`.
+  - Learner designed and implemented `Job` domain entity and `TransitionTo` method in `internal/job/job.go`.
+  - Learner implemented error categories and `ClassifyError` in `internal/job/errors.go`.
+  - Learner defined domain storage contract `Repository` interface with `context.Context` parameters in `internal/job/repository.go`.
   - Created standardized memory and continuity files per Section 15 of specification (`milestones.md`, `progress.md`, `teaching-notes.md`, `architecture.md`, `decisions/`, `.env.example`, root `README.md`).
 - **Tests & Commands Run:**
   - `go build ./...` -> Exited 0 (clean compilation).
@@ -26,8 +29,18 @@ Append-only, dated record of completed tasks, tests actually run with verified o
     - `TestCanTransition/waiting_to_running_is_valid` (PASS)
     - `TestCanTransition/waiting_to_completed_is_invalid` (PASS)
     - `TestCanTransition/waiting_to_stalled_is_invalid_failing_on_purpose` (PASS - verified negative transition).
-- **Blockers / Open Issues:**
-  - Need to align the state enum with the specification's suggested terminology (`queued`, `running`, `stalled` or `retry_wait`, `succeeded`/`completed`, `failed`, `canceled`) and discuss `Job` and `Run` entity models.
+### 2026-10-24
+- **Milestone:** M1 (In Progress).
+- **Work Completed:**
+  - Designed and implemented `MemoryRepository` struct satisfying `job.Repository` in `internal/job/memory_repository.go`.
+  - Implemented `NewMemoryRepository` constructor, initializing internal `jobs` map.
+  - Implemented all 4 interface methods: `FindByID`, `FindByRunID`, `CreateJob`, and `UpdateState`.
+  - Integrated `ctx.Err()` cancellation handling across all repository methods.
+  - Resolved compiler issues (unused variables in range loops, return type consistency).
+- **Tests & Commands Run:**
+  - `go test -v ./internal/job` -> All 3 subtests in `state_test.go` pass (exit code 0).
+  - Compilation of `memory_repository.go` verified.
 - **Next Task:**
-  - Design the `Job` struct fields (ID, RunID, Type, Payload, State, AttemptCount, Timestamps) in `internal/job/job.go` and write state transition method tests.
+  - Add `sync.RWMutex` to `MemoryRepository` to ensure thread safety across concurrent readers and writers.
+  - Write unit tests for `MemoryRepository` verifying storage operations and testing under `go test -race`.
 

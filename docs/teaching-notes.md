@@ -30,4 +30,11 @@ Durable notes on concepts taught, learner feedback, communication protocols, and
   - Reporting errors via `t.Errorf(...)` without an `assert` keyword.
 - **Zsh Autocorrect Quirk:**
   - Zsh flags `./...` as a potential typo for `./..`. Solution: quote `'./...'` or invoke `./internal/job`.
+- **Architecture & Object Design:**
+  - Global state vs Dependency Injection: global variables pollute unit tests and prevent polymorphic swapping of storage implementations.
+  - Interfaces vs Structs: interfaces define behavior contracts (`Repository`); structs hold state (`MemoryRepository`).
+  - Errors vs Error Categories: functions return `error` to describe *what happened*; callers evaluate `ErrorCategory` to decide *how to respond*.
+  - `context.Context`: unified cancellation propagation across memory and network boundaries.
+  - Go types: primitive values (`int64`, `string`) have zero values (`0`, `""`) and cannot be compared to `nil`.
+  - Blank identifier `_` for unused keys in `range` loops.
 
