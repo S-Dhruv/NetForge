@@ -40,7 +40,75 @@ Append-only, dated record of completed tasks, tests actually run with verified o
 - **Tests & Commands Run:**
   - `go test -v ./internal/job` -> All 3 subtests in `state_test.go` pass (exit code 0).
   - Compilation of `memory_repository.go` verified.
+### 2026-10-25
+- **Milestone:** M1 (In Progress).
+- **Work Completed:**
+  - Implemented comprehensive test suite in `internal/job/memory_repository_test.go`:
+    - `TestMemoryRepository_CreateJob`: creation and retrieval integrity.
+    - `TestMemoryRepository_FindByRunID`: fan-out multi-job querying by run ID.
+    - `TestMemoryRepository_UpdateState`: valid transitions, invalid transition error rejection, and non-existent ID error handling.
+    - `TestMemoryRepository_ConcurrentRace`: 10 concurrent goroutines executing 200 total jobs with simultaneous read and write operations.
+  - Designed and implemented `RunTask` entity and `InitializeRun` constructor with input validation in `internal/job/run.go`.
+  - Configured local containerized PostgreSQL 16 in `docker-compose.yml` and environment settings in `.env`.
+  - Downloaded official Go driver `github.com/jackc/pgx/v5`.
+  - Created versioned SQL migration scripts `migrations/00001_init.up.sql` (defining `runs` and `jobs` tables with foreign keys and B-tree indexes) and `migrations/00001_init.down.sql`.
+  - Architecture decision: isolate persistence in `internal/storage/postgres/` implementing `job.Repository` to maintain clean domain boundaries.
+- **Tests & Commands Run:**
+  - `go test -race -v ./internal/job` -> All 4 repository tests and 3 state transition tests passed with **zero data races** (exit code 0).
+  - `go build ./...` -> Exited 0.
 - **Next Task:**
-  - Add `sync.RWMutex` to `MemoryRepository` to ensure thread safety across concurrent readers and writers.
-  - Write unit tests for `MemoryRepository` verifying storage operations and testing under `go test -race`.
+  - Implement `internal/storage/postgres/repository.go` implementing `job.Repository` using `database/sql` and `pgx`.
+  - Write integration tests against PostgreSQL verifying durable persistence across restarts.
+
+---
+
+### 2026-10-25 (continued)
+- **Work Completed:**
+  - Implemented full PostgreSQL repository in `internal/storage/postgres/postgres_repository.go`:
+    - All 4 job methods: `CreateJob`, `FindByID`, `FindByRunID`, `UpdateState`.
+    - All 3 run methods: `CreateRun`, `FindRunByID`, `UpdateRunStatus`.
+    - Used `database/sql` with `pgx/v5/stdlib` driver via blank import.
+    - Added `StateFromString` helper to `internal/job/state.go` for DB round-trips.
+  - Rewrote `main.go` as `package main` with a `main()` function demonstrating the full CRUD lifecycle against PostgreSQL.
+  - Applied SQL migrations to running Docker container.
+- **Blockers & Fixes:**
+  - `go mod tidy` (run in sandbox without network) wiped `go.sum` and dependencies. Fixed by running `go get github.com/jackc/pgx/v5@v5.11.0` and `go mod tidy` from a terminal with internet access.
+  - `sql: unknown driver "pgx"` — fixed by adding `_ "github.com/jackc/pgx/v5/stdlib"` blank import in `main.go`.
+- **Verified Commands:**
+  - `go build ./...` → exit 0 (clean build, all packages compile).
+- **Next Task:**
+  - Apply migrations to running container: `docker exec -i netforge-postgres psql -U netforge -d netforge < migrations/00001_init.up.sql`
+  - Run `main.go` against PostgreSQL to verify end-to-end persistence.
+  - Write integration tests in `internal/storage/postgres/postgres_repository_test.go` mirroring the memory repository test suite.
+  - Verify jobs survive a Docker container restart (milestone M1 acceptance gate).
+
+---
+
+### 2026-10-25 (M1 closed)
+- **Verified:** `docker compose stop && docker compose start` → `SELECT id, status FROM runs` and `SELECT id, current_state FROM jobs` both returned `RUNNING`. Data survived restart.
+- **M1 Acceptance Gate: MET.**
+- **Next:** M2 — Single-Process Worker Loop.
+
+---
+
+### 2026-10-26 — M2 Design
+- **Decisions made (M2 worker loop design):**
+  - Batch claiming: fetch `N` jobs at once using `SELECT ... FOR UPDATE SKIP LOCKED LIMIT N` where N = free workers. Re-query only when in-memory list is empty.
+  - Claim eligible states: `WAITING` and `STALLED` (stalled jobs are retry-eligible).
+  - Bounded concurrency: buffered channel as semaphore (capacity = MaxJobs). Each worker acquires a slot before starting a job, releases on completion. No separate registry or mutex needed — the channel tracks concurrency naturally.
+  - Graceful shutdown: `context.Context` cancellation signals workers to stop between jobs (not mid-execution). `sync.WaitGroup` ensures main waits for all goroutines to finish.
+  - Signal handling: `SIGINT`/`SIGTERM` triggers context cancellation (to be added).
+- **Next Task:** Implement `ClaimJobs(ctx, n int)` method on PostgreSQL repository, then the worker loop in `internal/worker/`.
+
+---
+
+### 2026-10-26 — Tutor orientation
+- **Task:** Consolidated project + pedagogy for LLM tutors.
+- **Work Completed:**
+  - Added [`docs/llm-tutor-brief.md`](llm-tutor-brief.md) (session entry point: teaching contract, M2 design, repo map, anti-patterns).
+  - Linked brief from [`docs/teaching-notes.md`](teaching-notes.md).
+  - Synced [`README.md`](../README.md) milestone status (M1 complete, M2 in progress).
+- **Tests & Commands Run:**
+  - `go test -count=1 ./...` → `internal/job` ok; `postgres` package has no tests yet.
+- **Next Task:** Implement `ClaimJobs` on Postgres, then `internal/worker/` (learner-owned) per M2 design above.
 

@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 )
 
@@ -87,4 +88,39 @@ func (r *MemoryRepository) UpdateState(ctx context.Context, id int64, next State
 	}
 
 	return currentJob.TransitionTo(next)
+}
+
+func (r *MemoryRepository) ClaimJobs(ctx context.Context, numJobs int) ([]*Job, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if numJobs <= 0 {
+		return nil, nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var eligible []*Job
+	for _, j := range r.jobs {
+		if j.CurrentState == Waiting || j.CurrentState == Stalled {
+			eligible = append(eligible, j)
+		}
+	}
+	sort.Slice(eligible, func(i, j int) bool { return eligible[i].ID < eligible[j].ID })
+
+	n := numJobs
+	if n > len(eligible) {
+		n = len(eligible)
+	}
+
+	claimed := make([]*Job, 0, n)
+	for i := 0; i < n; i++ {
+		j := eligible[i]
+		if err := j.TransitionTo(Running); err != nil {
+			return nil, err
+		}
+		claimed = append(claimed, j)
+	}
+	return claimed, nil
 }

@@ -20,11 +20,13 @@ Milestones are capability gates, not calendar deadlines. Advance only when evide
 - [x] Implement error categories (transient vs permanent) (`internal/job/errors.go`).
 - [x] Define storage contract `Repository` interface (`internal/job/repository.go`).
 - [x] Implement in-memory repository structure (`internal/job/memory_repository.go`).
-- [ ] Add `sync.RWMutex` thread safety to in-memory repository.
-- [ ] Write unit tests for `MemoryRepository` (`internal/job/memory_repository_test.go`).
-- [ ] Define `Run` domain model.
-- [ ] Implement PostgreSQL access and migrations.
-- **Acceptance Gate:** Accepted jobs persist across restart; invalid state transitions are rejected; tests cover the lifecycle.
+- [x] Add `sync.RWMutex` thread safety to in-memory repository.
+- [x] Write unit tests for `MemoryRepository` (`internal/job/memory_repository_test.go`).
+- [x] Define `RunTask` domain model (`internal/job/run.go`).
+- [x] Author PostgreSQL schema migrations (`migrations/00001_init.up.sql`).
+- [x] Implement PostgreSQL storage repository (`internal/storage/postgres/postgres_repository.go`).
+- [x] Verify job persistence across process restart.
+- **Acceptance Gate: MET (2026-10-25).** Jobs and runs survived `docker compose stop && docker compose start`. Invalid state transitions rejected. Lifecycle covered by unit + race tests.
 
 ---
 

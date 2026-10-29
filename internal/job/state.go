@@ -10,6 +10,15 @@ const (
 	Completed State = "COMPLETED"
 )
 
+func StateFromString(s string) (State, bool) {
+    switch State(s) {
+    case Waiting, Running, Stalled, Failed, Completed:
+        return State(s), true
+    default:
+        return "", false
+    }
+}
+
 func CanTransition(current State, next State) bool {
 	switch current{
 	case Waiting:

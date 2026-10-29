@@ -2,12 +2,19 @@
 
 Durable notes on concepts taught, learner feedback, communication protocols, and pedagogical observations.
 
+**Tutor quick start:** Read [`llm-tutor-brief.md`](llm-tutor-brief.md) at the beginning of each new session, then verify the repo and update from [`progress.md`](progress.md).
+
 ---
 
 ### Working Contract & Learner Preferences
 1. **Teaching Protocol:**
-   - **Stage 0 (Default):** Explanations, architectural reasoning, requirements, edge cases, mental models, and conceptual questions. **NO code snippets.**
-   - **Stage 1 (On Request / Struggle):** Progressive hints, pseudocode, or small targeted snippets only when the learner explicitly requests or after a genuine attempt.
+   - **Stage 0 (Default):** High-level gist, core mission, constraints, and problem statement only. **NO code snippets and NO prescribed field/schema lists.** Do not spoon-feed struct designs, field names, or architecture layouts—give at most the overarching purpose so the learner reasons through and owns the design decisions themselves.
+   - **Stage 1 (Review & Progressive Hints):** Review the learner's design/code, point out edge cases or bugs, and offer graduated hints only if requested or after a genuine attempt. Full solutions only on explicit request.
+2. **Design Thinking Log (`docs/design-thinking-log.md`):**
+   - **Every time the learner makes a good design decision, update this file** with a new entry: what the idea was, what was strong about it, and what gap remains.
+   - **Every time the learner's design can be improved**, add a "What to sharpen" note in the relevant section.
+   - Keep entries honest and specific — not just praise, but concrete technical feedback.
+   - Update the Summary Table at the bottom of the file whenever a new entry is added.
 2. **Product Context:**
    - NetForge is a personal research companion powered by a durable, observable job execution engine.
    - Core invariants: at-least-once execution with idempotency, atomic lease claiming, crash recovery, structured error classification.

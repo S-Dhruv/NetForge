@@ -6,3 +6,5 @@ Gonna use this to see how much progress I make:
 23 oct 2026 7pm ish: Created a job struct and init behavior (since there are no explicit classes in Go). Also, created a way to determine if a certain error requires a retry and some progress made with CRUD on the database via repository.
 
 24 oct 2026 7pm ish: Created an in memory db and crud functionality, focusing on reusing the repository interface without using the implements keyword, binding the methods to the memoryRepository struct and using a map for the storage.
+
+Later that day: `Job` is the most atomic part which is going to run by the workers. The cumilation of this is a `Run`. The user enters a query which is going to be broken down and picked up various jobs and will wait for them to finish then aggregate everything and deliver the results (Fan out/ Fan In). Progressed by creating a function claims the jobs based on the number of free workers to ensure that we can batch workers' request. We also skip the locked rows and update the rows from waiting to stalled or running to avoid redudant runs.
