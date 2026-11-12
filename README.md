@@ -42,7 +42,8 @@ All project memory and architectural specifications are maintained in [`docs/`](
 - [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md): Full Project Charter & Engineering Specification (v1.0).
 - [`docs/milestones.md`](docs/milestones.md): Active milestones and acceptance gates.
 - [`docs/progress.md`](docs/progress.md): Chronological, evidence-backed progress log.
-- [`docs/teaching-notes.md`](docs/teaching-notes.md): Pedagogical notes, concepts taught, and rules of engagement.
+- [`docs/next-session.md`](docs/next-session.md): **Start here** — next tasks, M2 slices, tutor rules for new chats.
+- [`docs/teaching-notes.md`](docs/teaching-notes.md): Pedagogical notes and rules of engagement.
 - [`docs/architecture.md`](docs/architecture.md): High-level system architecture and invariants.
 - [`docs/decisions/`](docs/decisions/): Architecture Decision Records (ADRs).
 

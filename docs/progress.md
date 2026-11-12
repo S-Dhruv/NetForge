@@ -112,3 +112,32 @@ Append-only, dated record of completed tasks, tests actually run with verified o
   - `go test -count=1 ./...` → `internal/job` ok; `postgres` package has no tests yet.
 - **Next Task:** Implement `ClaimJobs` on Postgres, then `internal/worker/` (learner-owned) per M2 design above.
 
+---
+
+### 2026-10-30 — Session handoff
+- **State:** Postgres + memory `ClaimJobs` done; `claim_jobs_test.go` kept; **`internal/worker/` not started** (learner-owned).
+- **Doc:** Added [`next-session.md`](next-session.md) — slices 2→4, M2 design recap, tutor contract for new chats.
+- **Next task (learner):** M2 **slice 2** — workers + job channel + `UpdateState`; no claimer; see `next-session.md`.
+
+---
+
+### 2026-11-12 — M2 slice 2 workers
+- **Work:** `internal/worker` `Handler`, narrow `Store`, and `RunWorkers` (learner). Test `TestRunWorkers_FiveJobs` sends 5 jobs to 2 workers: 3 succeed, 1 handler rejects a bad payload, 1 stays `WAITING` so `RUNNING → COMPLETED` is illegal.
+- **Tests:** `go test -count=1 -v ./internal/worker` → PASS. `go test -race -count=1 ./internal/worker` → PASS.
+- **Gap closed:** `RunWorkers` now returns joined `UpdateState` errors and `continue`s to the next job. The five-job test still passes: four jobs reach `COMPLETED`/`FAILED`, the `WAITING` job reports `ErrInvalidTranistion`, and the pool does not stop.
+- **Next task:** M2 slice 3 — central claimer. Workers stay consumers only.
+
+---
+
+### 2026-11-12 — M2 slice 3 pool
+- **Work:** `PoolFunction` starts `RunWorkers` in one goroutine and calls `repo.ClaimJobs` on the caller. Workers signal a free slot after each job. `ClaimJobs` is not a goroutine.
+- **Tests:** `go test -count=1 -timeout 20s -v ./internal/worker` → both tests PASS. `go test -race -count=1 -timeout 30s ./internal/worker` → PASS. `TestPoolFunction_ClaimsWaitingJobs` creates 5 `WAITING` jobs, 2 workers, and all end `COMPLETED`.
+- **Next task:** Slice 4 — cancel the pool between jobs on `SIGINT`/`SIGTERM`.
+
+---
+
+### 2026-11-12 — M2 slice 4 cancel in the pool
+- **Work:** `PoolFunction` checks `ctx` before every claim. The free-slot send in `RunWorkers` gives up on `ctx.Done()`. Terminal `UpdateState` uses `context.WithoutCancel` so the in-flight job can still be saved.
+- **Tests:** `TestPoolFunction_CancelBeforeClaim` and `TestPoolFunction_CancelBetweenJobs` PASS (`go test -count=1 -timeout 20s ./internal/worker`).
+- **Next task:** `main` cancels that same context on `SIGINT`/`SIGTERM`. Postgres demo stays optional.
+

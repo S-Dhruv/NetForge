@@ -2,7 +2,7 @@
 
 **Purpose:** Fast orientation for any AI tutor. Authoritative detail lives in [`SPECIFICATION.md`](SPECIFICATION.md). This file is the *operational* cheat sheet: how to teach, where we are, what not to do.
 
-**Last verified against repo:** 2026-10-26 (`go test -count=1 ./...` → `internal/job` ok; no `internal/worker` yet).
+**Last verified against repo:** 2026-10-30 — see [`next-session.md`](next-session.md) for current state.
 
 ---
 

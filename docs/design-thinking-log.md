@@ -107,6 +107,11 @@ Make the main goroutine wait for all worker goroutines to finish using `sync.Wai
 | Batch claim with SKIP LOCKED | Efficient, correct isolation | Abandoned-job risk → leases (M3) |
 | Worker registry | No DB round-trips for worker state | Needs mutex or channel for thread safety |
 | WaitGroup shutdown | Correct pattern | Drain in-flight jobs before exit |
+| Narrow `Store` on the worker | Caller can only persist state | Channel still belongs to the caller, not the loop |
+| Mixed worker test | Success, bad payload, and illegal state in one run | Failed writes are joined after `Wait`, not by stopping the loop |
+| Wake the claimer when a worker finishes | Exact moment a slot is free | Initial `n` free slots, and an empty claim, still need their own rules |
+| Claim in free-slot batches, stalled first | Reuse `ClaimJobs`; retry before new work | One push cannot be the whole claimer; current claim sorts by id |
+| Gate sends on cancel | Stop new work between jobs | `ctx` is already that gate; a bool does not wake a parked send |
 
 ---
 
@@ -122,5 +127,83 @@ After considering both options — a worker registry (map + mutex) vs a buffered
 
 ### What to sharpen
 - A buffered channel semaphore controls *how many run at once* but doesn't assign specific jobs to specific workers. The distribution still needs a work-source — a shared job queue channel or a dispatcher that feeds jobs in. Think about where jobs come from once a slot opens up.
+
+---
+
+## Narrow worker store
+
+### Your idea
+The worker package declares its own `Store` with only `UpdateState`, instead of taking the full `job.Repository`.
+
+### What was good
+- The worker cannot call `ClaimJobs` or run methods by accident. The compiler enforces the slice boundary.
+- `MemoryRepository` already has `UpdateState`, so it satisfies `Store` with no wrapper and no second implementation.
+
+### What to sharpen
+- The jobs channel is created by the caller (the test, later the claimer). The worker function only receives it and ranges over it. Creating the channel inside the worker loop leaves nobody who can send.
+- `Store` does not embed `Repository` or gain its other methods. It lists `UpdateState` only. A repository value is accepted because that one method matches.
+
+---
+
+## Mixed outcomes in one worker run
+
+### Your idea
+One test pushes five jobs: three normal, one with data the handler rejects, and one left in a state that cannot move to `COMPLETED`.
+
+### What was good
+- A single happy-path assertion would hide both the classifier and the state machine. The bad payload must end `FAILED`, and the `WAITING` job must stay `WAITING` because `UpdateState` goes through `TransitionTo`.
+- Two workers and five jobs also forces the loop to run more than once per goroutine.
+
+### What to sharpen
+- A failed `UpdateState` must not `return` from the worker goroutine. That goroutine would stop ranging, and if every worker did the same the jobs still in the channel would never run. Record the error, `continue`, and return the joined errors only after `Wait`.
+
+---
+
+## Free-slot wake versus sleep
+
+### Your idea
+The worker that finishes a job wakes the claimer immediately. A sleep loop was the other option: the claimer naps and checks later whether a slot might be free.
+
+### What was good
+- The worker is the only place that knows the slot became free. Waking the claimer at that moment removes the guesswork from `time.Sleep`.
+- A claimer blocked on a signal is already asleep. The worker's send is the wake-up. A separate sleeper goroutine would only repeat that signal.
+
+### What to sharpen
+- Free slot and empty queue are different waits. No claimable rows is not solved by sleeping until a worker is free. If every worker is idle and `ClaimJobs` returns nothing, the pool is finished. If some workers are still busy, block until one of them signals, then claim again.
+- At startup every slot is free and no worker has finished yet. If the claimer waits for a wake-up before the first claim, and the workers wait for a job before they send that wake-up, both sides block. The claimer has to treat the initial `n` slots as free without a signal.
+
+---
+
+## Claimer loop, batch size, and stalled-first
+
+### Your idea
+One function calls the existing `ClaimJobs`, in batches sized from a local free-slot count that workers update. Prefer `STALLED` over `WAITING`. Create a channel, push the batch, then run the workers. A single function looked sufficient because the work is “query, then push.”
+
+### What was good
+- Reusing `ClaimJobs` instead of writing a second query. The repository already locks, selects `WAITING` and `STALLED`, and moves them to `RUNNING`.
+- The free-slot count is process-local. Workers are the ones who know a slot opened.
+- Claiming `STALLED` before `WAITING` retries work that already failed transiently before starting new work.
+
+### What to sharpen
+- The claimer function has to stay in the loop until `ClaimJobs` returns nothing and every worker is idle. A single push leaves later `WAITING` rows unclaimed, because the next claim happens only after a worker finishes.
+- The claimer can be a normal function on the caller goroutine. The workers are already goroutines. Launching the claimer with `go` is only required if something else must run on the caller at the same time.
+- Batch size is the number of free slots. Claiming extra rows marks them `RUNNING` while they sit in the channel. That cuts database calls and widens the crash window.
+- Today `ClaimJobs` does not prefer `STALLED`. It collects both states and sorts by id. Stalled-first is a change inside that method. A steady stream of stalled jobs can starve `WAITING` ones.
+- The jobs channel is created once. `RunWorkers` is what starts the `n` goroutines, and a direct call does not return until the channel is closed. The pool has to run that call concurrently with the claim loop. Claiming first, then calling `RunWorkers`, either claims every row before a worker runs or never reaches the second claim. An open empty channel blocks the workers; it does not make `RunWorkers` return.
+
+---
+
+## Cancel before the next send
+
+### Your idea
+Before anything else is sent on the job channel, check a condition, possibly a bool, and refuse further sends once the pool is stopping.
+
+### What was good
+- The right moment to stop is before the next claim and before the next send. The handler already running should finish.
+- A gate in front of the channel keeps unclaimed rows in `WAITING`.
+
+### What to sharpen
+- `ctx.Done()` is already that switch. A separate bool duplicates it, races if another goroutine writes it, and can disagree with the context `main` will cancel.
+- The bool does not wake a goroutine parked on a receive or on `free <-`. Shutdown still has to close the job channel, and the free-slot send has to be able to give up when the context is cancelled. Otherwise `Wait` never returns.
 
 

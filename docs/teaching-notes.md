@@ -2,7 +2,7 @@
 
 Durable notes on concepts taught, learner feedback, communication protocols, and pedagogical observations.
 
-**Tutor quick start:** Read [`llm-tutor-brief.md`](llm-tutor-brief.md) at the beginning of each new session, then verify the repo and update from [`progress.md`](progress.md).
+**Tutor quick start:** Read [`next-session.md`](next-session.md) for what to do next, then [`llm-tutor-brief.md`](llm-tutor-brief.md) and verify the repo against [`progress.md`](progress.md).
 
 ---
 
@@ -18,6 +18,8 @@ Durable notes on concepts taught, learner feedback, communication protocols, and
 2. **Product Context:**
    - NetForge is a personal research companion powered by a durable, observable job execution engine.
    - Core invariants: at-least-once execution with idempotency, atomic lease claiming, crash recovery, structured error classification.
+4. **Accountability:** When the tutor gives a wrong design instruction, say so in the next reply and name what was wrong. Hold the learner to the same standard: name a wrong decision plainly, including what it would have broken.
+5. **Acknowledge first:** When the learner answers or proposes a plan, say what they got right before corrections, code, or the next step.
 3. **Learner Background:**
    - Strong DSA background, familiar with Python and Java, light C++.
    - New to Go. Motivated by systems engineering, concurrency, networking, persistence, and reliability.

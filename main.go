@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
@@ -26,7 +28,8 @@ func NewPostgresRepo() (*postgres.Repository, error) {
 }
 
 func main() {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 	repo, err := NewPostgresRepo()
 	if err != nil {
 		log.Fatalf("failed to create repo: %v", err)
