@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sort"
 	"sync"
+	"time"
 )
 
 type MemoryRepository struct {
@@ -52,16 +53,16 @@ func (r *MemoryRepository) FindByRunID(ctx context.Context, runId int64) ([]*Job
 	return allJobs, nil
 }
 
-func (r *MemoryRepository) CreateJob(ctx context.Context, runId int64, jobType string, payload string) (*Job, error) {
+func (r *MemoryRepository) CreateJob(ctx context.Context, runId int64, jobType string, payload string, retryLimit int64) (*Job, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	if runId == 0 || jobType == "" || payload == "" {
+	if runId == 0 || jobType == "" || payload == "" || retryLimit < 0 {
 		return nil, errors.New("Missing fields")
 	}
 
-	newJob := NewJob(runId, jobType, payload)
+	newJob := NewJob(runId, jobType, payload, retryLimit)
 	if newJob == nil {
 		return nil, errors.New("Issue with job creation")
 	}
@@ -80,7 +81,7 @@ func (r *MemoryRepository) UpdateState(ctx context.Context, id int64, next State
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	
+
 	currentJob := r.jobs[id]
 
 	if currentJob == nil {
@@ -88,6 +89,25 @@ func (r *MemoryRepository) UpdateState(ctx context.Context, id int64, next State
 	}
 
 	return currentJob.TransitionTo(next)
+}
+
+// UpdateAttemptOutcome stores the state and elapsed time for a completed handler attempt.
+func (r *MemoryRepository) UpdateAttemptOutcome(ctx context.Context, id int64, next State, duration time.Duration) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	currentJob := r.jobs[id]
+	if currentJob == nil {
+		return errors.New("No current Job found")
+	}
+	if err := currentJob.TransitionTo(next); err != nil {
+		return err
+	}
+	currentJob.LatestAttemptDuration = duration
+	return nil
 }
 
 func (r *MemoryRepository) ClaimJobs(ctx context.Context, numJobs int) ([]*Job, error) {
@@ -120,6 +140,7 @@ func (r *MemoryRepository) ClaimJobs(ctx context.Context, numJobs int) ([]*Job, 
 		if err := j.TransitionTo(Running); err != nil {
 			return nil, err
 		}
+		j.AttemptCount++
 		claimed = append(claimed, j)
 	}
 	return claimed, nil

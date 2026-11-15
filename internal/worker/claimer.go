@@ -3,6 +3,8 @@ package worker
 import (
 	"context"
 	"errors"
+	"time"
+
 	"netforge/internal/job"
 )
 
@@ -13,7 +15,7 @@ type ClaimStore interface {
 
 // ClaimStore is the repository surface the pool needs. RunWorkers still sees only Store.
 
-func PoolFunction(ctx context.Context, n int, handler Handler, repo ClaimStore) error {
+func PoolFunction(ctx context.Context, n int, handler Handler, repo ClaimStore, timeout time.Duration) error {
 	if n <= 0 {
 		return errors.New("worker count must be positive")
 	}
@@ -22,7 +24,7 @@ func PoolFunction(ctx context.Context, n int, handler Handler, repo ClaimStore) 
 	free := make(chan struct{}, n)
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- RunWorkers(ctx, n, jobs, handler, repo, free)
+		errCh <- RunWorkers(ctx, n, jobs, handler, repo, free, timeout)
 	}()
 
 	slots := n

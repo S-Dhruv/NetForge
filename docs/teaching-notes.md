@@ -23,6 +23,7 @@ Durable notes on concepts taught, learner feedback, communication protocols, and
 3. **Learner Background:**
    - Strong DSA background, familiar with Python and Java, light C++.
    - New to Go. Motivated by systems engineering, concurrency, networking, persistence, and reliability.
+6. **Language (set 2026-11-14):** In every reply to the learner, use the real technical term, then immediately explain it in brackets. Example: a channel (a queue goroutines send and receive on). Do this for jargon the learner is still meeting, including Go and systems terms. Keep the explanation in the same sentence so the term and the meaning stay together.
 
 ---
 

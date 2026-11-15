@@ -141,3 +141,68 @@ Append-only, dated record of completed tasks, tests actually run with verified o
 - **Tests:** `TestPoolFunction_CancelBeforeClaim` and `TestPoolFunction_CancelBetweenJobs` PASS (`go test -count=1 -timeout 20s ./internal/worker`).
 - **Next task:** `main` cancels that same context on `SIGINT`/`SIGTERM`. Postgres demo stays optional.
 
+---
+
+### 2026-11-14 — Docs caught up; signal step clarified
+- **Clarification:** `main` does not call `ClaimJobs`. It creates `WAITING` jobs, builds a context with `signal.NotifyContext` for `SIGINT` and `SIGTERM`, and passes that context to `PoolFunction`. `PoolFunction` is the only claimer. Cancelling the context stops new claims; it is not itself a claim.
+- **Repo:** `internal/worker` (`RunWorkers`, `PoolFunction`) exists. `main.go` already has `signal.NotifyContext` and still only runs the Postgres CRUD demo.
+- **Docs corrected:** `next-session.md`, `llm-tutor-brief.md`, `milestones.md` (two M2 boxes checked; gate still open), `README.md`. `teaching-notes.md` now requires jargon plus a bracketed explanation in every learner-facing reply.
+- **Next task (learner):** wire `main` to `PoolFunction` with that signal context. Postgres demo stays optional.
+
+---
+
+### 2026-11-14 — M2 signal context in main
+- **Work:** `main` creates `WAITING` jobs, passes `handler` (returns nil) into `worker.PoolFunction` with the `signal.NotifyContext` context, and does not call `ClaimJobs`.
+- **Observed:** a `go run` at 23:21 created three `test-job-context` rows and Postgres showed them `COMPLETED` within the same second. `CreateJob`'s returned struct still prints `WAITING` because that value is the insert snapshot. `FindRunByID` after the pool still shows the run's own status; the pool does not call `UpdateRunStatus`.
+- **Not observed this session:** Ctrl+C mid-run. Pool cancel tests from 2026-11-12 still cover cancellation inside `PoolFunction`.
+- **Next task:** per-task deadlines. One job's time limit must end that job without cancelling the other workers. Process `SIGINT` stays the pool-wide stop.
+
+---
+
+### 2026-11-15 — M2 per-task deadline
+- **Work:** `Handler` takes a `context`. `RunWorkers` and `PoolFunction` take a `time.Duration`. Each job gets `context.WithTimeout`. A handler that returns `ErrNetworkTimeout` is stored as `STALLED`.
+- **Tests:** `TestRunWorkers_DeadlineStallsSlowJob` PASS (`go test -count=1 -timeout 20s -v ./internal/worker`). Slow job `STALLED`, fast job `COMPLETED`. The other four worker tests still PASS.
+- **Observed:** `main` with work `5s` and deadline `3s` retried until Ctrl+C. `ClaimJobs` selects `STALLED`, and nothing caps the attempt count, so the pool never goes idle.
+- **Next task:** attempt tracking and a max attempt count so a repeated `STALLED` job becomes `FAILED` and the pool can return. Execution duration is part of the same slice. Backoff and leases stay M3.
+
+### 2026-11-15 — Persistent agent memory
+- **Work:** Read active project documentation and inspected domain, repositories, worker/pool, main, migrations, and existing test cases. Added `docs/agent-memory.md` as a compact resume guide and root `AGENTS.md` to require reading and maintaining it after meaningful progress.
+- **Findings:** Recorded stale bootstrap/tutor summaries and implementation gaps separately from intended architecture, including unlimited retries, missing leases/integration tests, Postgres state-validation/status-read gaps, and shared memory pointers.
+- **Verification:** Documentation/code inspection only; no Go tests, build, application, or database commands run. Existing uncommitted work preserved; no implementation changes.
+- **Next task:** Unchanged: learner-owned attempt count, latest duration, and maximum-attempt failure in M2, followed by CLI inspection and remaining shutdown evidence.
+
+### 2026-11-16 — Persist per-job retry policy through claims
+- **Work:** Per user request, continued the in-progress model changes through the repositories. `CreateJob` now accepts a per-job retry limit; memory claims increment attempt count while moving to `RUNNING`; PostgreSQL performs both changes in one `UPDATE ... RETURNING` statement and returns retry limit/count. Job reads scan these values. Updated call sites and tests; the claim test covers distinct limits and incrementing again after `STALLED`.
+- **Scope:** Worker outcome handling (the user's next step 4) was left untouched. Latest attempt duration remains unfinished. No PostgreSQL integration test exists.
+- **Verification:** `gofmt` ran on touched Go files. Tests and build were not run.
+- **Next:** Review the repository changes and claim SQL, then implement worker validation/outcome policy.
+
+### 2026-11-16 — Incremental retry metadata migration
+- **Work:** Corrected the new `00002_update_to_db.sql` to add retry limit, attempt count, and latest-attempt-duration columns to the existing `jobs` table. Added a matching down migration. Left the older migration untouched.
+- **Verification:** Inspected migration text only; did not apply it or run tests/build.
+- **Note:** In `worker.go`, `job` names the imported package. `RetryLimit` is a field on a particular `Job`, so it must be selected through the job value (currently named `current` in that loop), not through the package name.
+
+### 2026-11-16 — Record per-attempt execution duration
+- **Work:** Added timing around each handler call. The worker now persists the resulting state and elapsed duration together through `UpdateAttemptOutcome`; memory and PostgreSQL repositories store it, and Postgres reads return the duration in nanoseconds. Corrected the migration column to BIGINT nanoseconds. The worker also rejects nil/non-RUNNING inputs before handler execution and reports the issue while releasing the pool slot. Added a focused duration test and updated the existing invalid-state expectation.
+- **Scope:** No LLM diagnosis or raw failure-detail persistence added. Retry exhaustion behavior remains for the learner's next worker step.
+- **Verification:** `gofmt` ran on touched Go files. Tests/build/migration were not run/applied.
+
+### 2026-11-16 — Retry-limit semantics
+- **Decision:** Per-job `RetryLimit` counts retries after the initial attempt. A value of 5 allows at most 6 total attempts. Success stays `COMPLETED`; permanent errors fail immediately; temporary errors stall while retries remain and fail after the final attempt.
+- **Next:** Implement and test the retry-exhaustion decision in `RunWorkers`.
+
+### 2026-11-16 — Add worker branch tests before retry implementation
+- **Work:** Added tests for first/final-attempt success, permanent failure, temporary retry while attempts remain, temporary failure after retry exhaustion, zero retries, nil and non-running jobs, outcome-persistence failure, per-attempt duration, and cancellation while signaling a free slot. Added `t.Log` progress messages to the claim and worker tests for verbose runs. The retry-exhaustion case captures the agreed behavior and is expected to fail until `RunWorkers` implements it.
+- **Verification:** Ran `gofmt` on `worker_test.go` and `git diff --check` for that file. Did not run tests or build, per the user's plan to run them.
+- **Next:** User runs the worker tests; if failures match the unimplemented retry-exhaustion behavior, implement that outcome rule in `RunWorkers`.
+
+### 2026-11-16 — Enforce retry exhaustion in worker
+- **Evidence:** User ran the worker suite; all shown tests passed except `temporary_error_exhausts_retries`, which observed `STALLED` instead of `FAILED` on attempt 6 with retry limit 5.
+- **Change:** `RunWorkers` now keeps success as `COMPLETED`, fails permanent errors immediately, fails temporary errors when `AttemptCount > RetryLimit`, and otherwise leaves them `STALLED` for another retry.
+- **Verification:** Formatted `worker.go` and checked its diff. The worker tests have not been rerun after this change.
+- **Next:** User reruns the worker tests and reports the result; then proceed if the retry matrix passes.
+
+### 2026-11-16 — Retry slice user-confirmed; move to CLI inspection
+- **User report:** “Looks good now” after the retry exhaustion change. The specific test command/output was not included, so this records user confirmation, not an independently verified pass.
+- **Next:** M2 CLI job inspection, followed by evidence for graceful shutdown leaving work recoverable. Retry limit 5 means one initial attempt plus five retries.
+

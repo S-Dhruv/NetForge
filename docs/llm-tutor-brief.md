@@ -2,7 +2,7 @@
 
 **Purpose:** Fast orientation for any AI tutor. Authoritative detail lives in [`SPECIFICATION.md`](SPECIFICATION.md). This file is the *operational* cheat sheet: how to teach, where we are, what not to do.
 
-**Last verified against repo:** 2026-10-30 — see [`next-session.md`](next-session.md) for current state.
+**Last verified against repo:** 2026-11-14 — see [`next-session.md`](next-session.md) for current state. [`progress.md`](progress.md) overrides this file when they disagree.
 
 ---
 
@@ -25,6 +25,7 @@ From [`teaching-notes.md`](teaching-notes.md) and SPEC §13:
 | **Design wins** | Log strong learner decisions in [`design-thinking-log.md`](design-thinking-log.md) (+ summary table). |
 | **Session end** | Update [`progress.md`](progress.md); adjust [`milestones.md`](milestones.md) only when gates are truly met. |
 | **Honesty** | Do not claim tests passed unless executed in this environment. |
+| **Jargon** | Every reply to the learner: technical term, then the meaning in brackets in the same sentence. See [`teaching-notes.md`](teaching-notes.md) learner preference 6. |
 
 **Default teaching loop:** milestone + outcome → concept + trade-offs → small testable step → learner predicts/implements → review → run tests → recap + next smallest task.
 
@@ -46,10 +47,8 @@ From [`teaching-notes.md`](teaching-notes.md) and SPEC §13:
 |-----------|--------|----------|
 | **M0** | Done | Module, docs, tests run from clean checkout |
 | **M1** | Done (2026-10-25) | State machine tests; memory + Postgres `Repository`; data survives `docker compose` restart — see [`milestones.md`](milestones.md) |
-| **M2** | **Current** | Design logged 2026-10-26 in `progress.md`; **not implemented** (`ClaimJobs`, `internal/worker/` missing) |
+| **M2** | **Current** | Pool, claimer, signal context, per-task deadlines, attempt count, per-job retry limit, and latest attempt duration are implemented. Retry exhaustion is based on `AttemptCount > RetryLimit`; user reported the latest worker tests look good, though output was not shared in this chat. **Next:** CLI job inspection; live shutdown evidence remains open. See [`next-session.md`](next-session.md). |
 | M3–M9 | Not started | Per [`milestones.md`](milestones.md) |
-
-**Note:** Root [`README.md`](../README.md) still lists M1 as “In Progress”—stale; prefer `milestones.md`.
 
 ---
 
@@ -57,9 +56,10 @@ From [`teaching-notes.md`](teaching-notes.md) and SPEC §13:
 
 ```
 netforge/
-  main.go                          # Postgres CRUD demo
-  internal/job/                    # Domain: Job, Run, states, errors, Repository
-  internal/storage/postgres/       # Postgres Repository (no integration tests yet)
+  main.go                          # Postgres demo; signal context starts PoolFunction
+  internal/job/                    # Domain: Job, Run, states, errors, Repository, ClaimJobs
+  internal/worker/                 # Handler, Store, RunWorkers, PoolFunction (slices 2–4)
+  internal/storage/postgres/       # Postgres Repository including ClaimJobs (no integration tests yet)
   migrations/00001_init.*.sql      # runs + jobs tables
   docker-compose.yml               # Postgres 16
   docs/                            # Project memory (SPEC, progress, teaching, ADRs)
@@ -78,17 +78,17 @@ From `progress.md` (2026-10-26):
 1. **`ClaimJobs(ctx, n)`** on Postgres: `SELECT … FOR UPDATE SKIP LOCKED LIMIT n`; claim `WAITING` and `STALLED`.
 2. **Batch claim:** refill in-memory batch when empty; `n` = free worker slots.
 3. **Concurrency:** buffered channel semaphore (capacity = max workers); acquire before run, release on finish (incl. defer on panic).
-4. **Shutdown:** cancel `context` between jobs; `sync.WaitGroup`; later wire `SIGINT`/`SIGTERM`.
-5. **Gap (preview M3):** batch claim without leases → abandoned `RUNNING` on crash; teach this when implementing claim.
+4. **Shutdown:** the pool already stops claiming when its `context` is cancelled and waits for in-flight workers. `main` still has to pass a context cancelled by `SIGINT`/`SIGTERM` into `PoolFunction`. `main` must not call `ClaimJobs`; `PoolFunction` is the only claimer.
+5. **Gap (preview M3):** a claim without a lease leaves a `RUNNING` row behind if the process dies before `UpdateState`. Do not pull leases into M2 to close the signal step.
 
-**M2 acceptance gate:** bounded concurrency; one successful execution per claim; `go test -race ./...`; shutdown leaves recoverable state; CLI status (stretch within M2 checklist).
+**M2 acceptance gate:** bounded concurrency; one successful execution per claim; `go test -race ./...`; shutdown leaves recoverable state; CLI status (still open on the M2 checklist).
 
-**Suggested implementation order (vertical slices):**
+**Slice status (2026-11-14):**
 
-1. Extend `Repository` + Postgres with atomic claim + tests (integration test with real DB).
-2. Trivial job handler (e.g. sleep/log) + worker loop package.
-3. Wire semaphore + WaitGroup + signal-aware root context in `main` or `cmd/`.
-4. CLI inspect commands once execution is observable.
+1. `ClaimJobs` on memory and Postgres — done. Postgres integration test still missing.
+2. `internal/worker` `RunWorkers` — done.
+3. `PoolFunction` claims and workers consume — done. Pool cancel between jobs — done.
+4. **Current:** `main` starts the pool with the signal context. CLI inspect after that.
 
 Do **not** skip straight to research adapters (M4) until M2 gate is met.
 

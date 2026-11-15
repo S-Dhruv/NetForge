@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     payload TEXT NOT NULL,
     current_state VARCHAR(50) NOT NULL,
     failure_reason TEXT NOT NULL DEFAULT 'None',
+    retry_limit BIGINT NOT NULL DEFAULT 5,
+    attempt_count BIGINT NOT NULL DEFAULT 0,
+    latest_attempt_duration TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
 );

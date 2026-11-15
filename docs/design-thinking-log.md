@@ -112,6 +112,7 @@ Make the main goroutine wait for all worker goroutines to finish using `sync.Wai
 | Wake the claimer when a worker finishes | Exact moment a slot is free | Initial `n` free slots, and an empty claim, still need their own rules |
 | Claim in free-slot batches, stalled first | Reuse `ClaimJobs`; retry before new work | One push cannot be the whole claimer; current claim sorts by id |
 | Gate sends on cancel | Stop new work between jobs | `ctx` is already that gate; a bool does not wake a parked send |
+| Demo handler lives in `main` | Pool stays free of demo work; `ClaimJobs` stays inside `PoolFunction` | `CreateJob`'s return value is the insert snapshot; run status is a different row from job state |
 
 ---
 
@@ -205,5 +206,20 @@ Before anything else is sent on the job channel, check a condition, possibly a b
 ### What to sharpen
 - `ctx.Done()` is already that switch. A separate bool duplicates it, races if another goroutine writes it, and can disagree with the context `main` will cancel.
 - The bool does not wake a goroutine parked on a receive or on `free <-`. Shutdown still has to close the job channel, and the free-slot send has to be able to give up when the context is cancelled. Otherwise `Wait` never returns.
+
+---
+
+## Handler in main, passed as a value
+
+### Your idea
+A small function in `main.go` returns nil, and that function value is the third argument to `PoolFunction`.
+
+### What was good
+- The worker package stays unaware of the demo. `Handler` is a function type, so any matching function in `main` is valid.
+- `main` still does not call `ClaimJobs`. The signal context and the pool call are the process's whole job.
+
+### What to sharpen
+- The struct `CreateJob` returns is the insert snapshot. Printing it after creation always shows `WAITING`, including when the row is later `COMPLETED`.
+- `FindRunByID` reads the run row. The pool updates job rows through `UpdateState` and does not call `UpdateRunStatus`, so the run can stay `WAITING` after every job is `COMPLETED`.
 
 

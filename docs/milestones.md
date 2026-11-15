@@ -31,13 +31,13 @@ Milestones are capability gates, not calendar deadlines. Advance only when evide
 ---
 
 ### M2 — Single-Process Worker Pool
-- [ ] Implement bounded worker pool (semaphore / channels).
-- [ ] Atomic job claiming (`FOR UPDATE SKIP LOCKED`).
-- [ ] `context.Context` cancellation and per-task deadlines.
+- [x] Implement bounded worker pool (semaphore / channels). `RunWorkers` + `PoolFunction`, race tests passed 2026-11-12.
+- [x] Atomic job claiming (`FOR UPDATE SKIP LOCKED`). `ClaimJobs` on memory and Postgres.
+- [x] `context.Context` cancellation and per-task deadlines. Pool cancel between jobs (2026-11-12). `RunWorkers` takes a `time.Duration`; `TestRunWorkers_DeadlineStallsSlowJob` passed 2026-11-15.
 - [ ] Attempt tracking and execution duration.
-- [ ] Graceful shutdown (SIGINT/SIGTERM) leaving recoverable state.
+- [ ] Graceful shutdown (SIGINT/SIGTERM) leaving recoverable state. `main` now starts `PoolFunction` on a `signal.NotifyContext` (2026-11-14). A live Ctrl+C that leaves unclaimed rows `WAITING` is not recorded yet.
 - [ ] CLI status inspection commands.
-- **Acceptance Gate:** Concurrency is bounded; jobs execute once per successful claim; race tests pass (`go test -race ./...`); shutdown leaves recoverable state.
+- **Acceptance Gate:** Concurrency is bounded; jobs execute once per successful claim; race tests pass (`go test -race ./...`); shutdown leaves recoverable state. **Not met** until the signal path and the remaining checklist items above have evidence.
 
 ---
 

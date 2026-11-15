@@ -8,19 +8,20 @@ import (
 
 func TestMemoryRepository_CreateJob(t *testing.T) {
 	tests := []struct {
-		name    string
-		runId   int64
-		jobType string
-		payload string
+		name       string
+		runId      int64
+		jobType    string
+		payload    string
+		retryLimit int64
 	}{
-		{name: "create job", runId: 1, jobType: "creation", payload: "test"},
+		{name: "create job", runId: 1, jobType: "creation", payload: "test", retryLimit: 5},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			memoryRepo := NewMemoryRepository()
 
-			got, err := memoryRepo.CreateJob(ctx, tt.runId, tt.jobType, tt.payload)
+			got, err := memoryRepo.CreateJob(ctx, tt.runId, tt.jobType, tt.payload, tt.retryLimit)
 			if err != nil {
 				t.Fatalf("unexpected error creating job: %v", err)
 			}
@@ -41,6 +42,9 @@ func TestMemoryRepository_CreateJob(t *testing.T) {
 			if found.Payload != tt.payload {
 				t.Errorf("got payload %q, want %q", found.Payload, tt.payload)
 			}
+			if found.RetryLimit != tt.retryLimit {
+				t.Errorf("got retry limit %d, want %d", found.RetryLimit, tt.retryLimit)
+			}
 		})
 	}
 }
@@ -50,15 +54,15 @@ func TestMemoryRepository_FindByRunID(t *testing.T) {
 	repo := NewMemoryRepository()
 
 	// Seed 2 jobs for Run 100, and 1 job for Run 200
-	_, err := repo.CreateJob(ctx, 100, "discovery", "url1")
+	_, err := repo.CreateJob(ctx, 100, "discovery", "url1", 5)
 	if err != nil {
 		t.Fatalf("failed to create job 1: %v", err)
 	}
-	_, err = repo.CreateJob(ctx, 100, "fetch", "url2")
+	_, err = repo.CreateJob(ctx, 100, "fetch", "url2", 5)
 	if err != nil {
 		t.Fatalf("failed to create job 2: %v", err)
 	}
-	_, err = repo.CreateJob(ctx, 200, "analyze", "url3")
+	_, err = repo.CreateJob(ctx, 200, "analyze", "url3", 5)
 	if err != nil {
 		t.Fatalf("failed to create job 3: %v", err)
 	}
@@ -86,7 +90,7 @@ func TestMemoryRepository_UpdateState(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMemoryRepository()
 
-	job, err := repo.CreateJob(ctx, 1, "fetch", "data")
+	job, err := repo.CreateJob(ctx, 1, "fetch", "data", 5)
 	if err != nil {
 		t.Fatalf("failed to create job: %v", err)
 	}
@@ -131,7 +135,7 @@ func TestMemoryRepository_ConcurrentRace(t *testing.T) {
 			defer wg.Done()
 			runID := int64(workerID + 1)
 			for j := 0; j < numJobsPerWorker; j++ {
-				job, err := repo.CreateJob(ctx, runID, "task", "payload")
+				job, err := repo.CreateJob(ctx, runID, "task", "payload", 5)
 				if err != nil {
 					t.Errorf("concurrent CreateJob error: %v", err)
 					return

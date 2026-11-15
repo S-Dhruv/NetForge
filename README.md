@@ -7,7 +7,7 @@ A personal research companion powered by a durable, observable, and fault-tolera
 ## Capabilities & Roadmap
 - **M0: Repository & Contract** — Go module, testing harness, project charter. *(Complete)*
 - **M1: Domain Model & Durable Jobs** — State machine, Job/Run entities, PostgreSQL persistence. *(Complete)*
-- **M2: Single-Process Worker Pool** — Bounded concurrency, atomic job claiming, graceful shutdown. *(In progress — design logged; implementation next)*
+- **M2: Single-Process Worker Pool** — Bounded concurrency, atomic job claiming, graceful shutdown. *(In progress — retry limits and attempt duration implemented; CLI inspect and shutdown evidence remain)*
 - **M3: Retry & Crash Recovery** — Leases, exponential backoff, abandoned job recovery.
 - **M4: First Useful Research Workflow** — Safe retrieval, normalization, and reporting.
 - **M5: Evidence-Backed Analysis** — Structured claims and citation verification.

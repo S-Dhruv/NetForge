@@ -26,14 +26,17 @@ func execStmt(ctx context.Context, db *sql.DB, query string, args ...any) (sql.R
 }
 
 // CreateJob inserts a new job row and returns the created Job.
-func (r *Repository) CreateJob(ctx context.Context, runID int64, jobType string, payload string) (*job.Job, error) {
+func (r *Repository) CreateJob(ctx context.Context, runID int64, jobType string, payload string, retryLimit int64) (*job.Job, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if retryLimit < 0 {
+		return nil, fmt.Errorf("retry limit cannot be negative")
+	}
 	now := time.Now().UTC()
 	const q = `
-		INSERT INTO jobs (id, run_id, job_type, payload, current_state, failure_reason, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO jobs (id, run_id, job_type, payload, current_state, failure_reason, retry_limit, attempt_count, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 	// ID generation mirrors the in‑memory repo (Unix nano timestamp)
 	id := time.Now().UnixNano()
@@ -44,6 +47,8 @@ func (r *Repository) CreateJob(ctx context.Context, runID int64, jobType string,
 		payload,
 		job.Waiting, // initial state
 		"None",      // failure_reason default
+		retryLimit,
+		int64(0),
 		now,
 		now,
 	)
@@ -56,6 +61,8 @@ func (r *Repository) CreateJob(ctx context.Context, runID int64, jobType string,
 		Type:         jobType,
 		Payload:      payload,
 		CurrentState: job.Waiting,
+		RetryLimit:   retryLimit,
+		AttemptCount: 0,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}, nil
@@ -67,15 +74,16 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (*job.Job, error) {
 		return nil, err
 	}
 	const q = `
-		SELECT id, run_id, job_type, payload, current_state, failure_reason, created_at, updated_at
+		SELECT id, run_id, job_type, payload, current_state, failure_reason, retry_limit, attempt_count, COALESCE(latest_attempt_duration, 0), created_at, updated_at
 		FROM jobs
 		WHERE id = $1
 	`
 	row := r.db.QueryRowContext(ctx, q, id)
 	var (
-		j           job.Job
-		stateStr    string
-		failureInfo string
+		j             job.Job
+		stateStr      string
+		failureInfo   string
+		durationNanos int64
 	)
 	if err := row.Scan(
 		&j.ID,
@@ -84,6 +92,9 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (*job.Job, error) {
 		&j.Payload,
 		&stateStr,
 		&failureInfo,
+		&j.RetryLimit,
+		&j.AttemptCount,
+		&durationNanos,
 		&j.CreatedAt,
 		&j.UpdatedAt,
 	); err != nil {
@@ -98,6 +109,7 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (*job.Job, error) {
 	}
 	j.CurrentState = st
 	j.FailureReason = failureInfo
+	j.LatestAttemptDuration = time.Duration(durationNanos)
 	return &j, nil
 }
 
@@ -107,7 +119,7 @@ func (r *Repository) FindByRunID(ctx context.Context, runID int64) ([]*job.Job, 
 		return nil, err
 	}
 	const q = `
-		SELECT id, run_id, job_type, payload, current_state, failure_reason, created_at, updated_at
+		SELECT id, run_id, job_type, payload, current_state, failure_reason, retry_limit, attempt_count, COALESCE(latest_attempt_duration, 0), created_at, updated_at
 		FROM jobs
 		WHERE run_id = $1
 		ORDER BY id
@@ -120,9 +132,10 @@ func (r *Repository) FindByRunID(ctx context.Context, runID int64) ([]*job.Job, 
 	var result []*job.Job
 	for rows.Next() {
 		var (
-			j           job.Job
-			stateStr    string
-			failureInfo string
+			j             job.Job
+			stateStr      string
+			failureInfo   string
+			durationNanos int64
 		)
 		if err := rows.Scan(
 			&j.ID,
@@ -131,6 +144,9 @@ func (r *Repository) FindByRunID(ctx context.Context, runID int64) ([]*job.Job, 
 			&j.Payload,
 			&stateStr,
 			&failureInfo,
+			&j.RetryLimit,
+			&j.AttemptCount,
+			&durationNanos,
 			&j.CreatedAt,
 			&j.UpdatedAt,
 		); err != nil {
@@ -142,6 +158,7 @@ func (r *Repository) FindByRunID(ctx context.Context, runID int64) ([]*job.Job, 
 		}
 		j.CurrentState = st
 		j.FailureReason = failureInfo
+		j.LatestAttemptDuration = time.Duration(durationNanos)
 		result = append(result, &j)
 	}
 	if err = rows.Err(); err != nil {
@@ -163,6 +180,23 @@ func (r *Repository) UpdateState(ctx context.Context, id int64, next job.State) 
 	_, err := execStmt(ctx, r.db, q, next, time.Now().UTC(), id)
 	if err != nil {
 		return fmt.Errorf("update job state: %w", err)
+	}
+	return nil
+}
+
+// UpdateAttemptOutcome stores a job's new state and the elapsed time of its latest attempt.
+func (r *Repository) UpdateAttemptOutcome(ctx context.Context, id int64, next job.State, duration time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	const q = `
+		UPDATE jobs
+		SET current_state = $1, latest_attempt_duration = $2, updated_at = $3
+		WHERE id = $4
+	`
+	_, err := execStmt(ctx, r.db, q, next, int64(duration), time.Now().UTC(), id)
+	if err != nil {
+		return fmt.Errorf("update attempt outcome: %w", err)
 	}
 	return nil
 }
@@ -263,7 +297,7 @@ func (r *Repository) ClaimJobs(ctx context.Context, numberOfJobs int) ([]*job.Jo
 	now := time.Now().UTC()
 	const q = `
 		UPDATE jobs
-		SET current_state = $2, updated_at = $3
+		SET current_state = $2, attempt_count = attempt_count + 1, updated_at = $3
 		WHERE id IN (
 			SELECT id
 			FROM jobs
@@ -272,7 +306,7 @@ func (r *Repository) ClaimJobs(ctx context.Context, numberOfJobs int) ([]*job.Jo
 			FOR UPDATE SKIP LOCKED
 			LIMIT $1
 		)
-		RETURNING id, run_id, job_type, payload, current_state, failure_reason, created_at, updated_at
+		RETURNING id, run_id, job_type, payload, current_state, failure_reason, retry_limit, attempt_count, COALESCE(latest_attempt_duration, 0), created_at, updated_at
 	`
 	rows, err := r.db.QueryContext(ctx, q,
 		numberOfJobs,
@@ -289,9 +323,10 @@ func (r *Repository) ClaimJobs(ctx context.Context, numberOfJobs int) ([]*job.Jo
 	var claimed []*job.Job
 	for rows.Next() {
 		var (
-			j           job.Job
-			stateStr    string
-			failureInfo string
+			j             job.Job
+			stateStr      string
+			failureInfo   string
+			durationNanos int64
 		)
 		if err := rows.Scan(
 			&j.ID,
@@ -300,6 +335,9 @@ func (r *Repository) ClaimJobs(ctx context.Context, numberOfJobs int) ([]*job.Jo
 			&j.Payload,
 			&stateStr,
 			&failureInfo,
+			&j.RetryLimit,
+			&j.AttemptCount,
+			&durationNanos,
 			&j.CreatedAt,
 			&j.UpdatedAt,
 		); err != nil {
@@ -311,6 +349,7 @@ func (r *Repository) ClaimJobs(ctx context.Context, numberOfJobs int) ([]*job.Jo
 		}
 		j.CurrentState = st
 		j.FailureReason = failureInfo
+		j.LatestAttemptDuration = time.Duration(durationNanos)
 		claimed = append(claimed, &j)
 	}
 	if err := rows.Err(); err != nil {
